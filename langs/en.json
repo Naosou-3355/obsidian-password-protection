@@ -7,7 +7,7 @@
   "open_password_protection": "Lock password protection",
   "password_protection_opened": "Password protection is locked!",
   "password_protection_closed": "Password verification passed.",
-  "notice_set_password": "Please set the password in the settings page for the Password Protection Plugin first!",
+  "notice_set_password": "Please set the password in the settings page for Nao's lock first!",
   "setting_folder_name": "Protected folder or file",
   "setting_folder_desc": "The default value '/' is the root path of the vault",
   "place_holder_enter_path": "Enter path, e.g. mynotes/diary",
@@ -36,5 +36,11 @@
   "setting_add_path": "Add protected path",
   "setting_add_path_name": "Protected path",
   "setting_add_path_place_holder": "Enter path, e.g. mynotes/diary",
-  "setting_remove_path": "Remove protected path"
+  "setting_remove_path": "Remove protected path",
+  "emergency_codes_title": "Save your emergency codes",
+  "emergency_codes_desc": "Each of these 5 codes can be used once to unlock your vault if you forget your password. Save them somewhere safe — they will not be shown again.",
+  "emergency_codes_saved": "I have saved these codes",
+  "setting_emergency_codes_name": "Emergency unlock codes",
+  "setting_emergency_codes_desc": "Regenerate your 5 emergency codes. Each code can be used only once. Old codes will be permanently invalidated.",
+  "setting_emergency_codes_btn": "Regenerate"
 }

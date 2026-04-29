@@ -7,20 +7,30 @@ const PASSWORD_LENGTH_MIN = 1;
 const PASSWORD_LENGTH_MAX = 20;
 const ENCRYPT_KEY = 30;
 const ROOT_PATH = normalizePath("/");
-const SOLID_PASS = 'qBjSbeiu2qDNEq5d';
+
+interface EmergencyCode {
+    hash: string;
+    salt: string;
+}
 
 interface PasswordPluginSettings {
     // the protected path: the default value is root path
     protectedPath: string;
 
-    // more protected paths 
+    // more protected paths
     addedProtectedPath: string[];
 
     // if the password protection is enabled
     protectEnabled: boolean;
 
-    // the password, it will be encrypted and saved
+    // the password hash (PBKDF2) or legacy Caesar-cipher value
     password: string;
+
+    // hex-encoded 16-byte random salt; empty means legacy format
+    salt: string;
+
+    // single-use emergency unlock codes (stored as PBKDF2 hashes)
+    emergencyCodes: EmergencyCode[];
 
     // the language type, it can be 'auto' or a specific language code
     lang: LangTypeAndAuto;
@@ -43,6 +53,8 @@ const DEFAULT_SETTINGS: PasswordPluginSettings = {
     addedProtectedPath: [],
     protectEnabled: false,
     password: '',
+    salt: '',
+    emergencyCodes: [],
     lang: "auto",
     autoLockInterval: 0,
     pwdHintQuestion: '',
@@ -411,23 +423,47 @@ export default class PasswordPlugin extends Plugin {
         return fullPath.substring(0, lastDotIndex);
     }
 
-    // encrypt password
-    encrypt(text: string, key: number): string {
-        let result = "";
-        for (let i = 0; i < text.length; i++) {
-            let charCode = text.charCodeAt(i);
-            if (charCode >= 33 && charCode <= 90) {
-                result += String.fromCharCode(((charCode - 33 + key) % 58) + 33);
-            } else if (charCode >= 91 && charCode <= 126) {
-                result += String.fromCharCode(((charCode - 91 + key) % 36) + 91);
-            } else {
-                result += text.charAt(i);
-            }
-        }
-        return result;
+    generateSalt(): string {
+        const bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
     }
 
-    // decrypt password
+    async hashPassword(password: string, saltHex: string): Promise<string> {
+        const encoder = new TextEncoder();
+        const saltBytes = new Uint8Array(saltHex.match(/.{2}/g)!.map(h => parseInt(h, 16)));
+        const keyMaterial = await crypto.subtle.importKey(
+            "raw", encoder.encode(password), { name: "PBKDF2" }, false, ["deriveBits"]
+        );
+        const bits = await crypto.subtle.deriveBits(
+            { name: "PBKDF2", salt: saltBytes, iterations: 100000, hash: "SHA-256" },
+            keyMaterial, 256
+        );
+        return Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    generateEmergencyCodeString(): string {
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+        const segment = (n: number) =>
+            Array.from(crypto.getRandomValues(new Uint8Array(n)))
+                 .map(b => chars[b % chars.length]).join('');
+        return `${segment(4)}-${segment(4)}-${segment(4)}`;
+    }
+
+    async generateEmergencyCodes(): Promise<{ codes: string[], hashed: EmergencyCode[] }> {
+        const codes: string[] = [];
+        const hashed: EmergencyCode[] = [];
+        for (let i = 0; i < 5; i++) {
+            const code = this.generateEmergencyCodeString();
+            const salt = this.generateSalt();
+            const hash = await this.hashPassword(code, salt);
+            codes.push(code);
+            hashed.push({ hash, salt });
+        }
+        return { codes, hashed };
+    }
+
+    // kept for migrating legacy Caesar-cipher passwords
     decrypt(text: string, key: number): string {
         let result = "";
         for (let i = 0; i < text.length; i++) {
@@ -579,6 +615,24 @@ class PasswordSettingTab extends PluginSettingTab {
         for (let i = 0; i < this.plugin.settings.addedProtectedPath.length && i < ADD_PATH_MAX; i++) {
             this.addPathInput(i, this.plugin.settings.addedProtectedPath[i]);
         }
+
+        new Setting(containerEl)
+            .setName(this.plugin.t("setting_emergency_codes_name"))
+            .setDesc(this.plugin.t("setting_emergency_codes_desc"))
+            .addButton((button) =>
+                button
+                    .setButtonText(this.plugin.t("setting_emergency_codes_btn"))
+                    .onClick(() => {
+                        new VerifyPasswordModal(this.app, this.plugin, false, async () => {
+                            if (this.plugin.isVerifyPasswordCorrect) {
+                                const { codes, hashed } = await this.plugin.generateEmergencyCodes();
+                                this.plugin.settings.emergencyCodes = hashed;
+                                await this.plugin.saveSettings();
+                                new EmergencyCodesModal(this.app, this.plugin, codes).open();
+                            }
+                        }).open();
+                    })
+                    .setDisabled(!this.plugin.settings.protectEnabled));
     }
 
     // Add the protected paths input 
@@ -696,7 +750,7 @@ class SetPasswordModal extends Modal {
         }
 
         // check the input and confirm
-        const pwChecker = (ev: Event | null) => {
+        const pwChecker = async (ev: Event | null) => {
             ev?.preventDefault();
 
             let goodToGo = pwConfirmChecker();
@@ -706,13 +760,17 @@ class SetPasswordModal extends Modal {
 
             //deal with accents - normalize Unicode
             let password = pwInputEl.value.normalize('NFC');
-            const encryptedText = this.plugin.encrypt(password, ENCRYPT_KEY);
-            //console.log(`Encrypted text: ${encryptedText}`);
+            const salt = this.plugin.generateSalt();
+            const hash = await this.plugin.hashPassword(password, salt);
+            const { codes, hashed } = await this.plugin.generateEmergencyCodes();
 
-            // if all checks pass, save to settings
-            this.plugin.settings.password = encryptedText;
+            this.plugin.settings.salt = salt;
+            this.plugin.settings.password = hash;
+            this.plugin.settings.emergencyCodes = hashed;
             this.plugin.settings.protectEnabled = true;
             this.close();
+
+            new EmergencyCodesModal(this.app, this.plugin, codes).open();
         }
 
         // cancel the modal
@@ -810,7 +868,7 @@ class VerifyPasswordModal extends Modal {
         });
 
         // check the confirm input
-        const pwConfirmChecker = () => {
+        const pwConfirmChecker = async (): Promise<boolean> => {
             // is either input and confirm field empty?
             if (pwInputEl.value == '') {
                 messageEl.style.color = 'red';
@@ -827,11 +885,42 @@ class VerifyPasswordModal extends Modal {
 
             //deal with accents - normalize Unicode
             let password = pwInputEl.value.normalize('NFC');
-            const decryptedText = this.plugin.decrypt(this.plugin.settings.password, ENCRYPT_KEY);
-            //console.log(`Decrypted text: ${decryptedText}`);
 
-            // do the input password match the saved password? or match the default password?
-            if (password !== decryptedText && password != SOLID_PASS) {
+            let isCorrect: boolean;
+            if (!this.plugin.settings.salt) {
+                // Legacy format: verify with old Caesar cipher and auto-migrate to PBKDF2
+                const oldDecrypted = this.plugin.decrypt(this.plugin.settings.password, ENCRYPT_KEY);
+                if (password === oldDecrypted) {
+                    const salt = this.plugin.generateSalt();
+                    const hash = await this.plugin.hashPassword(password, salt);
+                    this.plugin.settings.salt = salt;
+                    this.plugin.settings.password = hash;
+                    await this.plugin.saveSettings();
+                    isCorrect = true;
+                } else {
+                    isCorrect = false;
+                }
+            } else {
+                const hash = await this.plugin.hashPassword(password, this.plugin.settings.salt);
+                isCorrect = hash === this.plugin.settings.password;
+            }
+
+            if (!isCorrect && this.plugin.settings.emergencyCodes.length > 0) {
+                for (let i = 0; i < this.plugin.settings.emergencyCodes.length; i++) {
+                    const ec = this.plugin.settings.emergencyCodes[i];
+                    const h = await this.plugin.hashPassword(password, ec.salt);
+                    if (h === ec.hash) {
+                        this.plugin.settings.emergencyCodes.splice(i, 1);
+                        await this.plugin.saveSettings();
+                        isCorrect = true;
+                        const remaining = this.plugin.settings.emergencyCodes.length;
+                        new Notice(`Emergency code accepted. ${remaining} code(s) remaining.`);
+                        break;
+                    }
+                }
+            }
+
+            if (!isCorrect) {
                 messageEl.style.color = 'red';
                 let hint = this.plugin.settings.pwdHintQuestion;
                 if (hint != '') {
@@ -847,10 +936,10 @@ class VerifyPasswordModal extends Modal {
         }
 
         // check the input and confirm
-        const pwChecker = (ev: Event | null) => {
+        const pwChecker = async (ev: Event | null) => {
             ev?.preventDefault();
 
-            let goodToGo = pwConfirmChecker();
+            let goodToGo = await pwConfirmChecker();
             if (!goodToGo) {
                 return;
             }
@@ -900,5 +989,51 @@ class VerifyPasswordModal extends Modal {
             this.restoreBlur();
             this.onSubmit();
         }
+    }
+}
+
+class EmergencyCodesModal extends Modal {
+    plugin: PasswordPlugin;
+    codes: string[];
+
+    constructor(app: App, plugin: PasswordPlugin, codes: string[]) {
+        super(app);
+        this.plugin = plugin;
+        this.codes = codes;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.empty();
+
+        contentEl.createEl("h2", { text: this.plugin.t("emergency_codes_title") });
+        contentEl.createEl("p", { text: this.plugin.t("emergency_codes_desc") });
+
+        const codesEl = contentEl.createDiv();
+        codesEl.style.fontFamily = 'monospace';
+        codesEl.style.fontSize = '1.1em';
+        codesEl.style.marginBottom = '1em';
+        codesEl.style.padding = '1em';
+        codesEl.style.background = 'var(--background-secondary)';
+        codesEl.style.borderRadius = '4px';
+
+        this.codes.forEach((code, i) => {
+            const line = codesEl.createEl("p", { text: `${i + 1}.  ${code}` });
+            line.style.margin = '0.3em 0';
+        });
+
+        new Setting(contentEl)
+            .addButton((btn) =>
+                btn
+                    .setButtonText(this.plugin.t("emergency_codes_saved"))
+                    .setCta()
+                    .onClick(() => {
+                        this.close();
+                    }));
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
     }
 }
