@@ -1018,27 +1018,35 @@ class EmergencyCodesModal extends Modal {
         codesEl.style.borderRadius = '4px';
 
         this.codes.forEach((code, i) => {
-            const row = codesEl.createDiv();
-            row.style.display = 'flex';
-            row.style.alignItems = 'center';
-            row.style.justifyContent = 'space-between';
-            row.style.margin = '0.3em 0';
-
-            row.createEl("span", { text: `${i + 1}.  ${code}` });
-
-            const copyBtn = row.createEl("button", { text: "Copy" });
-            copyBtn.style.marginLeft = '1em';
-            copyBtn.style.fontSize = '0.8em';
-            copyBtn.style.cursor = 'pointer';
-            copyBtn.addEventListener('click', () => {
-                navigator.clipboard.writeText(code).then(() => {
-                    copyBtn.setText("Copied!");
-                    setTimeout(() => copyBtn.setText("Copy"), 1500);
-                });
-            });
+            const line = codesEl.createEl("p", { text: `${i + 1}.  ${code}` });
+            line.style.margin = '0.3em 0';
         });
 
+        const allCodesText = this.codes.map((c, i) => `${i + 1}.  ${c}`).join('\n');
+
         new Setting(contentEl)
+            .addButton((btn) =>
+                btn
+                    .setButtonText(this.plugin.t("emergency_codes_copy_all"))
+                    .onClick(() => {
+                        navigator.clipboard.writeText(allCodesText).then(() => {
+                            btn.setButtonText(this.plugin.t("emergency_codes_copied"));
+                            setTimeout(() => btn.setButtonText(this.plugin.t("emergency_codes_copy_all")), 1500);
+                        });
+                    }))
+            .addButton((btn) =>
+                btn
+                    .setButtonText(this.plugin.t("emergency_codes_download"))
+                    .onClick(() => {
+                        const header = "Nao's lock — Emergency Unlock Codes\nEach code can only be used once. Keep this file somewhere safe.\n\n";
+                        const blob = new Blob([header + allCodesText], { type: 'text/plain' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = 'naos-lock-emergency-codes.txt';
+                        a.click();
+                        URL.revokeObjectURL(url);
+                    }))
             .addButton((btn) =>
                 btn
                     .setButtonText(this.plugin.t("emergency_codes_saved"))
