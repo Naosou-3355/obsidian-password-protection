@@ -41,6 +41,9 @@ interface PasswordPluginSettings {
     // the password hint question, it will be shown when the password is not correct
     pwdHintQuestion: string;
 
+    // whether to show the lock button in the left sidebar
+    showLockButton: boolean;
+
     // if the last verify password is correct, it will be used to determine if the password protection should be closed
     isLastVerifyPasswordCorrect: boolean;
 
@@ -59,7 +62,8 @@ const DEFAULT_SETTINGS: PasswordPluginSettings = {
     autoLockInterval: 0,
     pwdHintQuestion: '',
     isLastVerifyPasswordCorrect: false,
-    timeOnUnload: 0
+    timeOnUnload: 0,
+    showLockButton: true
 }
 
 export default class PasswordPlugin extends Plugin {
@@ -70,6 +74,7 @@ export default class PasswordPlugin extends Plugin {
     lastUnlockOrOpenFileTime: moment.Moment | null = null;
 
     passwordRibbonBtn: HTMLElement;
+    lockVaultRibbonBtn: HTMLElement;
     i18n: I18n;
 
     t = (x: TransItemType, vars?: any) => {
@@ -106,10 +111,26 @@ export default class PasswordPlugin extends Plugin {
             this.openPasswordProtection();
         });
 
+        // Lock vault ribbon button (shown/hidden by setting)
+        this.lockVaultRibbonBtn = this.addRibbonIcon('lock', this.t("lock_vault"), () => {
+            this.enablePasswordProtection();
+        });
+        this.lockVaultRibbonBtn.style.display = this.settings.showLockButton ? '' : 'none';
+
         // This adds a simple command that can be triggered anywhere
         this.addCommand({
             id: 'Open password protection',
             name: this.t("open"),
+            callback: () => {
+                this.enablePasswordProtection();
+            }
+        });
+
+        // Lock vault command with default Cmd+L / Ctrl+L shortcut
+        this.addCommand({
+            id: 'lock-vault',
+            name: this.t("lock_vault"),
+            hotkeys: [{ modifiers: ["Mod"], key: "l" }],
             callback: () => {
                 this.enablePasswordProtection();
             }
@@ -275,6 +296,12 @@ export default class PasswordPlugin extends Plugin {
                 this.isVerifyPasswordCorrect = false;
                 this.closeLeaves();
             }
+        }
+    }
+
+    updateLockRibbonButton() {
+        if (this.lockVaultRibbonBtn) {
+            this.lockVaultRibbonBtn.style.display = this.settings.showLockButton ? '' : 'none';
         }
     }
 
@@ -532,6 +559,19 @@ class PasswordSettingTab extends PluginSettingTab {
                                 }).open();
                             }
                         }
+                    })
+            );
+
+        new Setting(containerEl)
+            .setName(this.plugin.t("setting_show_lock_button_name"))
+            .setDesc(this.plugin.t("setting_show_lock_button_desc"))
+            .addToggle((toggle) =>
+                toggle
+                    .setValue(this.plugin.settings.showLockButton)
+                    .onChange(async (value) => {
+                        this.plugin.settings.showLockButton = value;
+                        await this.plugin.saveSettings();
+                        this.plugin.updateLockRibbonButton();
                     })
             );
 

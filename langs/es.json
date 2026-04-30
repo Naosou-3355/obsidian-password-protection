@@ -45,5 +45,8 @@
   "emergency_codes_saved": "I have saved these codes",
   "setting_emergency_codes_name": "Emergency unlock codes",
   "setting_emergency_codes_desc": "Regenerate your 5 emergency codes. Each code can be used only once. Old codes will be permanently invalidated.",
-  "setting_emergency_codes_btn": "Regenerate"
+  "setting_emergency_codes_btn": "Regenerate",
+  "lock_vault": "Lock vault",
+  "setting_show_lock_button_name": "Show lock button in sidebar",
+  "setting_show_lock_button_desc": "Add a button in the left sidebar to instantly lock the vault. Default shortcut: Cmd+L (Mac) / Ctrl+L (Windows)."
 }
