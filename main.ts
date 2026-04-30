@@ -1018,8 +1018,24 @@ class EmergencyCodesModal extends Modal {
         codesEl.style.borderRadius = '4px';
 
         this.codes.forEach((code, i) => {
-            const line = codesEl.createEl("p", { text: `${i + 1}.  ${code}` });
-            line.style.margin = '0.3em 0';
+            const row = codesEl.createDiv();
+            row.style.display = 'flex';
+            row.style.alignItems = 'center';
+            row.style.justifyContent = 'space-between';
+            row.style.margin = '0.3em 0';
+
+            row.createEl("span", { text: `${i + 1}.  ${code}` });
+
+            const copyBtn = row.createEl("button", { text: "Copy" });
+            copyBtn.style.marginLeft = '1em';
+            copyBtn.style.fontSize = '0.8em';
+            copyBtn.style.cursor = 'pointer';
+            copyBtn.addEventListener('click', () => {
+                navigator.clipboard.writeText(code).then(() => {
+                    copyBtn.setText("Copied!");
+                    setTimeout(() => copyBtn.setText("Copy"), 1500);
+                });
+            });
         });
 
         new Setting(contentEl)
