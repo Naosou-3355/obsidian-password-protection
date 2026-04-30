@@ -48,5 +48,5 @@
   "setting_emergency_codes_btn": "Regenerate",
   "lock_vault": "Lock vault",
   "setting_show_lock_button_name": "Show lock button in sidebar",
-  "setting_show_lock_button_desc": "Add a button in the left sidebar to instantly lock the vault. Default shortcut: Cmd+L (Mac) / Ctrl+L (Windows)."
+  "setting_show_lock_button_desc": "Add a button in the left sidebar to instantly lock the vault. Default shortcut: Ctrl+L."
 }

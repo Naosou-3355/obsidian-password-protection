@@ -1,6 +1,6 @@
 {
 	"name": "naos-lock",
-	"version": "1.1.0",
+	"version": "1.1.1",
 	"description": "Lock and protect your private notes and diary with a password, no encrypt, no decrypt.",
 	"main": "main.js",
 	"scripts": {

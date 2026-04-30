@@ -73,7 +73,6 @@ export default class PasswordPlugin extends Plugin {
     isAutoLockRegistered: boolean = false;
     lastUnlockOrOpenFileTime: moment.Moment | null = null;
 
-    passwordRibbonBtn: HTMLElement;
     lockVaultRibbonBtn: HTMLElement;
     i18n: I18n;
 
@@ -106,11 +105,6 @@ export default class PasswordPlugin extends Plugin {
             await this.saveSettings();
         });
 
-        // This creates an icon in the left ribbon.
-        this.passwordRibbonBtn = this.addRibbonIcon('lock', this.t("open_password_protection"), (evt: MouseEvent) => {
-            this.openPasswordProtection();
-        });
-
         // Lock vault ribbon button (shown/hidden by setting)
         this.lockVaultRibbonBtn = this.addRibbonIcon('lock', this.t("lock_vault"), () => {
             this.enablePasswordProtection();
@@ -126,11 +120,11 @@ export default class PasswordPlugin extends Plugin {
             }
         });
 
-        // Lock vault command with default Cmd+L / Ctrl+L shortcut
+        // Lock vault command with default Ctrl+L shortcut
         this.addCommand({
             id: 'lock-vault',
             name: this.t("lock_vault"),
-            hotkeys: [{ modifiers: ["Mod"], key: "l" }],
+            hotkeys: [{ modifiers: ["Ctrl"], key: "l" }],
             callback: () => {
                 this.enablePasswordProtection();
             }
