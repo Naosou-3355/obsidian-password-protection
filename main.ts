@@ -452,14 +452,9 @@ export default class PasswordPlugin extends Plugin {
         return fullPath.substring(0, lastDotIndex);
     }
 
-    async isBiometricsAvailable(): Promise<boolean> {
-        if (typeof PublicKeyCredential === 'undefined') return false;
-        if (typeof navigator?.credentials?.create !== 'function') return false;
-        try {
-            return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-        } catch {
-            return false;
-        }
+    isBiometricsAvailable(): boolean {
+        return typeof PublicKeyCredential !== 'undefined' &&
+               typeof navigator?.credentials?.create === 'function';
     }
 
     async registerBiometrics(): Promise<boolean> {
@@ -759,9 +754,8 @@ class PasswordSettingTab extends PluginSettingTab {
             biometricsSetting.addButton((btn) =>
                 btn.setButtonText(this.plugin.t("biometrics_register_btn"))
                     .setCta()
-                    .onClick(async () => {
-                        const available = await this.plugin.isBiometricsAvailable();
-                        if (!available) {
+                    .onClick(() => {
+                        if (!this.plugin.isBiometricsAvailable()) {
                             new Notice(this.plugin.t("biometrics_not_supported"));
                             return;
                         }
