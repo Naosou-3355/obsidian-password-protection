@@ -49,6 +49,12 @@ interface PasswordPluginSettings {
 
     // close the obsidian and open it again, if the time difference is less than 2 seconds, it will be considered as the last verify password is correct
     timeOnUnload: moment.Moment | number;
+
+    // whether biometric unlock (Touch ID / Face ID) is enrolled
+    biometricsEnabled: boolean;
+
+    // base64url-encoded WebAuthn credential ID for biometric unlock
+    biometricCredentialId: string;
 }
 
 const DEFAULT_SETTINGS: PasswordPluginSettings = {
@@ -63,7 +69,9 @@ const DEFAULT_SETTINGS: PasswordPluginSettings = {
     pwdHintQuestion: '',
     isLastVerifyPasswordCorrect: false,
     timeOnUnload: 0,
-    showLockButton: true
+    showLockButton: true,
+    biometricsEnabled: false,
+    biometricCredentialId: '',
 }
 
 export default class PasswordPlugin extends Plugin {
@@ -444,6 +452,69 @@ export default class PasswordPlugin extends Plugin {
         return fullPath.substring(0, lastDotIndex);
     }
 
+    async isBiometricsAvailable(): Promise<boolean> {
+        if (typeof PublicKeyCredential === 'undefined') return false;
+        if (typeof navigator?.credentials?.create !== 'function') return false;
+        try {
+            return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+        } catch {
+            return false;
+        }
+    }
+
+    async registerBiometrics(): Promise<boolean> {
+        try {
+            const challenge = crypto.getRandomValues(new Uint8Array(32));
+            const userId = crypto.getRandomValues(new Uint8Array(16));
+            const credential = await navigator.credentials.create({
+                publicKey: {
+                    challenge,
+                    rp: { name: "Nao's Lock" },
+                    user: { id: userId, name: "vault", displayName: "Obsidian Vault" },
+                    pubKeyCredParams: [
+                        { alg: -7, type: "public-key" },
+                        { alg: -257, type: "public-key" },
+                    ],
+                    authenticatorSelection: {
+                        authenticatorAttachment: "platform",
+                        userVerification: "required",
+                        residentKey: "preferred",
+                    },
+                    timeout: 60000,
+                },
+            }) as PublicKeyCredential | null;
+            if (!credential) return false;
+            const raw = new Uint8Array(credential.rawId);
+            this.settings.biometricCredentialId = btoa(String.fromCharCode(...raw))
+                .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+            this.settings.biometricsEnabled = true;
+            await this.saveSettings();
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    async verifyBiometrics(): Promise<boolean> {
+        try {
+            const challenge = crypto.getRandomValues(new Uint8Array(32));
+            const b64 = this.settings.biometricCredentialId
+                .replace(/-/g, '+').replace(/_/g, '/');
+            const credId = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+            const assertion = await navigator.credentials.get({
+                publicKey: {
+                    challenge,
+                    allowCredentials: [{ id: credId, type: "public-key", transports: ["internal"] }],
+                    userVerification: "required",
+                    timeout: 60000,
+                },
+            }) as PublicKeyCredential | null;
+            return assertion !== null;
+        } catch {
+            return false;
+        }
+    }
+
     generateSalt(): string {
         const bytes = new Uint8Array(16);
         crypto.getRandomValues(bytes);
@@ -667,6 +738,45 @@ class PasswordSettingTab extends PluginSettingTab {
                         }).open();
                     })
                     .setDisabled(!this.plugin.settings.protectEnabled));
+
+        const biometricsSetting = new Setting(containerEl)
+            .setName(this.plugin.t("biometrics_name"))
+            .setDesc(this.plugin.t("biometrics_desc"));
+
+        if (!this.plugin.settings.protectEnabled) {
+            biometricsSetting.setDisabled(true);
+        } else if (this.plugin.settings.biometricsEnabled) {
+            biometricsSetting.addButton((btn) =>
+                btn.setButtonText(this.plugin.t("biometrics_disable_btn"))
+                    .onClick(async () => {
+                        this.plugin.settings.biometricsEnabled = false;
+                        this.plugin.settings.biometricCredentialId = '';
+                        await this.plugin.saveSettings();
+                        new Notice(this.plugin.t("biometrics_disabled"));
+                        this.display();
+                    }));
+        } else {
+            biometricsSetting.addButton((btn) =>
+                btn.setButtonText(this.plugin.t("biometrics_register_btn"))
+                    .setCta()
+                    .onClick(async () => {
+                        const available = await this.plugin.isBiometricsAvailable();
+                        if (!available) {
+                            new Notice(this.plugin.t("biometrics_not_supported"));
+                            return;
+                        }
+                        new VerifyPasswordModal(this.app, this.plugin, false, async () => {
+                            if (!this.plugin.isVerifyPasswordCorrect) return;
+                            const ok = await this.plugin.registerBiometrics();
+                            if (ok) {
+                                new Notice(this.plugin.t("biometrics_registered"));
+                                this.display();
+                            } else {
+                                new Notice(this.plugin.t("biometrics_register_failed"));
+                            }
+                        }).open();
+                    }));
+        }
     }
 
     // Add the protected paths input 
@@ -882,6 +992,32 @@ class VerifyPasswordModal extends Modal {
 
         // title - to let the user know what the modal will do
         contentEl.createEl("h2", { text: this.plugin.t("verify_password") });
+
+        // biometrics shortcut button
+        if (this.plugin.settings.biometricsEnabled && this.plugin.settings.biometricCredentialId) {
+            const bioContainerEl = contentEl.createDiv();
+            bioContainerEl.style.marginBottom = '1em';
+            const bioBtn = bioContainerEl.createEl('button', { text: this.plugin.t("biometrics_unlock_btn") });
+            bioBtn.style.width = '70%';
+            const bioErrorEl = bioContainerEl.createEl('span');
+            bioErrorEl.style.color = 'red';
+            bioErrorEl.style.display = 'none';
+            bioErrorEl.style.marginLeft = '0.5em';
+            bioBtn.addEventListener('click', async () => {
+                bioBtn.disabled = true;
+                bioErrorEl.style.display = 'none';
+                const ok = await this.plugin.verifyBiometrics();
+                if (ok) {
+                    this.plugin.lastUnlockOrOpenFileTime = moment();
+                    this.plugin.isVerifyPasswordCorrect = true;
+                    this.close();
+                } else {
+                    bioBtn.disabled = false;
+                    bioErrorEl.setText(this.plugin.t("biometrics_failed"));
+                    bioErrorEl.style.display = '';
+                }
+            });
+        }
 
         // make a div for user's password input
         const inputPwContainerEl = contentEl.createDiv();

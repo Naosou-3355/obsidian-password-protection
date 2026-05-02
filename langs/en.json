@@ -48,5 +48,15 @@
   "setting_emergency_codes_btn": "Regenerate",
   "lock_vault": "Lock vault",
   "setting_show_lock_button_name": "Show lock button in sidebar",
-  "setting_show_lock_button_desc": "Add a button in the left sidebar to instantly lock the vault. Default shortcut: Ctrl+L."
+  "setting_show_lock_button_desc": "Add a button in the left sidebar to instantly lock the vault. Default shortcut: Ctrl+L.",
+  "biometrics_name": "Touch ID / Face ID",
+  "biometrics_desc": "Use biometrics to unlock the vault instead of typing your password. Falls back to password if unavailable.",
+  "biometrics_register_btn": "Register",
+  "biometrics_disable_btn": "Disable",
+  "biometrics_registered": "Biometrics registered.",
+  "biometrics_disabled": "Biometrics disabled.",
+  "biometrics_not_supported": "Biometrics are not supported on this device.",
+  "biometrics_register_failed": "Failed to register biometrics. This may not be supported in this environment.",
+  "biometrics_unlock_btn": "Use Touch ID / Face ID",
+  "biometrics_failed": "Biometric authentication failed. Please use your password."
 }
